@@ -1,0 +1,38 @@
+{
+  "name": "voice-input",
+  "version": "1.0.0",
+  "description": "Simple voice input tool for Ubuntu Wayland - record speech, transcribe with Nexara API, copy to clipboard",
+  "main": "index.js",
+  "bin": {
+    "voice-input": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "node test-sound.js"
+  },
+  "keywords": [
+    "voice",
+    "input",
+    "speech",
+    "transcription",
+    "ubuntu",
+    "wayland",
+    "nexara",
+    "whisper",
+    "clipboard",
+    "hotkey"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.7",
+    "dotenv": "^17.2.2",
+    "form-data": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "os": [
+    "linux"
+  ]
+}
