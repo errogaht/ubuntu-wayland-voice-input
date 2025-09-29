@@ -32,7 +32,7 @@ class NexaraTranscriber {
             'Authorization': `Bearer ${this.apiKey}`,
             ...formData.getHeaders()
           },
-          timeout: 30000
+          timeout: 120000
         });
 
         const transcription = response.data.text;
