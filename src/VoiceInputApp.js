@@ -205,19 +205,19 @@ class VoiceInputApp {
       return;
     }
 
-    const textWithPrefix = '[Voice - verify]: ' + text;
-    console.log(`💬 Text: "${textWithPrefix}"`);
+    const textWithPrefixAndSuffix = '[Voice - verify]: ' + text + '. ultrathink';
+    console.log(`💬 Text: "${textWithPrefixAndSuffix}"`);
 
     try {
       // Copy text to clipboard
-      await this.clipboardManager.copyText(textWithPrefix);
+      await this.clipboardManager.copyText(textWithPrefixAndSuffix);
 
       // Play ready sound - double beep indicates text is ready to paste
       console.log('🔊 Playing ready sound...');
       await this.soundNotifier.playTextReady();
 
       console.log('📋 Text copied! Press Ctrl+V to paste anywhere.');
-      this.logger.logSession(this.sessionId, 'CLIPBOARD_SUCCESS', { textLength: textWithPrefix.length });
+      this.logger.logSession(this.sessionId, 'CLIPBOARD_SUCCESS', { textLength: textWithPrefixAndSuffix.length });
       
     } catch (error) {
       console.error('❌ Clipboard copy failed:', error.message);
