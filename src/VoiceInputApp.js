@@ -199,13 +199,60 @@ class VoiceInputApp {
     }
   }
 
+  /**
+   * Format text into multiple lines by wrapping at word boundaries
+   * Keeps lines around 120 characters for comfortable reading
+   * @param {string} text - The text to format
+   * @returns {string} - Formatted multi-line text
+   */
+  formatTextToMultiLine(text) {
+    if (!text || text.trim().length === 0) {
+      return text;
+    }
+
+    const maxLineLength = 120; // Maximum line length for readability
+    const words = text.split(/\s+/); // Split by whitespace
+    const lines = [];
+    let currentLine = '';
+
+    for (const word of words) {
+      if (!word) continue;
+
+      // If current line is empty, start with this word
+      if (currentLine.length === 0) {
+        currentLine = word;
+      } else {
+        // Check if adding this word would exceed the recommended length
+        const potentialLine = currentLine + ' ' + word;
+
+        if (potentialLine.length <= maxLineLength) {
+          // Fits on current line
+          currentLine = potentialLine;
+        } else {
+          // Current line is full, save it and start a new line
+          lines.push(currentLine);
+          currentLine = word;
+        }
+      }
+    }
+
+    // Add the last line
+    if (currentLine.length > 0) {
+      lines.push(currentLine);
+    }
+
+    return lines.join('\n');
+  }
+
   async copyText(text) {
     if (!text || text.trim().length === 0) {
       console.log('⚠️ No text to copy');
       return;
     }
 
-    const textWithPrefixAndSuffix = '[Voice - verify]: ' + text + '. ultrathink';
+    // Format text into multiple lines for better readability
+    const formattedText = this.formatTextToMultiLine(text);
+    const textWithPrefixAndSuffix = '[Voice - verify]: ' + formattedText + '. ultrathink';
     console.log(`💬 Text: "${textWithPrefixAndSuffix}"`);
 
     try {
@@ -218,18 +265,18 @@ class VoiceInputApp {
 
       console.log('📋 Text copied! Press Ctrl+V to paste anywhere.');
       this.logger.logSession(this.sessionId, 'CLIPBOARD_SUCCESS', { textLength: textWithPrefixAndSuffix.length });
-      
+
     } catch (error) {
       console.error('❌ Clipboard copy failed:', error.message);
       this.logger.logError(this.sessionId, error, 'clipboard');
-      
+
       // Play error sound for clipboard failures
       try {
         await this.soundNotifier.playError();
       } catch (soundError) {
         console.error('[VoiceInputApp] Error playing error sound:', soundError.message);
       }
-      
+
       throw error;
     }
   }
