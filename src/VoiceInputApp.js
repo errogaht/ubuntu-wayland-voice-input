@@ -3,6 +3,8 @@ const NexaraTranscriber = require('./NexaraTranscriber');
 const ClipboardManager = require('./ClipboardManager');
 const SimpleSoundNotifier = require('./SimpleSoundNotifier');
 const { createLogger } = require('./LogManager');
+const fs = require('fs');
+const path = require('path');
 
 class VoiceInputApp {
   constructor(config = {}) {
@@ -10,6 +12,7 @@ class VoiceInputApp {
       recordingTimeoutMs: config.recordingTimeoutMs || 5000,
       typingDelay: config.typingDelay || 100,
       nexaraApiKey: config.nexaraApiKey || process.env.NEXARA_API_KEY,
+      maxBackupRecordings: config.maxBackupRecordings || 5,
       ...config
     };
 
@@ -20,9 +23,9 @@ class VoiceInputApp {
     this.audioRecorder = new SimpleAudioRecorder({
       device: 'default'
     });
-    
+
     this.transcriber = new NexaraTranscriber(this.config.nexaraApiKey);
-    
+
     this.clipboardManager = new ClipboardManager();
 
     this.soundNotifier = new SimpleSoundNotifier({
@@ -32,10 +35,84 @@ class VoiceInputApp {
     this.logger = createLogger();
     this.sessionId = this.generateSessionId();
     this.isRunning = false;
+    this.backupFilePath = null;
+    this.backupDir = path.join(__dirname, '../var/recordings');
   }
 
   generateSessionId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+  }
+
+  /**
+   * Save recording to backup directory
+   * @param {Buffer} audioBuffer - The audio data to save
+   */
+  async saveRecordingBackup(audioBuffer) {
+    try {
+      // Ensure backup directory exists
+      if (!fs.existsSync(this.backupDir)) {
+        fs.mkdirSync(this.backupDir, { recursive: true });
+      }
+
+      // Save recording with session ID
+      this.backupFilePath = path.join(this.backupDir, `${this.sessionId}.wav`);
+      fs.writeFileSync(this.backupFilePath, audioBuffer);
+
+      console.log(`💾 Recording backed up: ${this.backupFilePath}`);
+      this.logger.logSession(this.sessionId, 'BACKUP_SAVED', {
+        path: this.backupFilePath,
+        size: audioBuffer.length
+      });
+
+      // Cleanup old backups
+      await this.cleanupOldBackups();
+
+    } catch (error) {
+      console.error('[VoiceInputApp] Failed to save recording backup:', error.message);
+      this.logger.logError(this.sessionId, error, 'backup');
+    }
+  }
+
+  /**
+   * Cleanup old backups, keeping only the latest N recordings
+   */
+  async cleanupOldBackups() {
+    try {
+      const files = fs.readdirSync(this.backupDir)
+        .filter(file => file.endsWith('.wav'))
+        .map(file => ({
+          name: file,
+          path: path.join(this.backupDir, file),
+          time: fs.statSync(path.join(this.backupDir, file)).mtime.getTime()
+        }))
+        .sort((a, b) => b.time - a.time); // Sort by time, newest first
+
+      // Keep only the latest N recordings
+      const toDelete = files.slice(this.config.maxBackupRecordings);
+
+      for (const file of toDelete) {
+        fs.unlinkSync(file.path);
+        console.log(`🗑️ Deleted old backup: ${file.name}`);
+      }
+
+    } catch (error) {
+      console.error('[VoiceInputApp] Failed to cleanup old backups:', error.message);
+    }
+  }
+
+  /**
+   * Delete backup recording after successful transcription
+   */
+  deleteBackup() {
+    if (this.backupFilePath && fs.existsSync(this.backupFilePath)) {
+      try {
+        fs.unlinkSync(this.backupFilePath);
+        console.log(`🗑️ Backup deleted after successful transcription`);
+        this.backupFilePath = null;
+      } catch (error) {
+        console.error('[VoiceInputApp] Failed to delete backup:', error.message);
+      }
+    }
   }
 
   async initialize() {
@@ -101,14 +178,20 @@ class VoiceInputApp {
         return;
       }
       
-      this.logger.logSession(this.sessionId, 'RECORDING_SUCCESS', { 
+      this.logger.logSession(this.sessionId, 'RECORDING_SUCCESS', {
         duration: recordingDuration,
-        audioSize: audioBuffer.length 
+        audioSize: audioBuffer.length
       });
-      
+
+      // Save backup before transcription
+      await this.saveRecordingBackup(audioBuffer);
+
       const transcription = await this.transcribeAudio(audioBuffer);
       await this.copyText(transcription);
-      
+
+      // Delete backup after successful transcription
+      this.deleteBackup();
+
       console.log('✅ Completed');
       this.logger.logSession(this.sessionId, 'SESSION_COMPLETE');
       
