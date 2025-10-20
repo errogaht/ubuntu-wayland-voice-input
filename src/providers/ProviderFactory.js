@@ -1,4 +1,5 @@
 const NexaraProvider = require('./NexaraProvider');
+const PalatineProvider = require('./PalatineProvider');
 
 /**
  * Factory for creating transcription providers
@@ -6,6 +7,7 @@ const NexaraProvider = require('./NexaraProvider');
 class ProviderFactory {
   static providers = {
     'nexara': NexaraProvider,
+    'palatine': PalatineProvider,
     // Add more providers here as they are implemented
     // 'openai': OpenAIProvider,
     // 'assemblyai': AssemblyAIProvider,
@@ -114,6 +116,17 @@ class ProviderFactory {
     }
 
     // Try to auto-detect based on available API keys
+    if (env.PALATINE_API_KEY) {
+      return this.create('palatine', {
+        apiKey: env.PALATINE_API_KEY,
+        apiUrl: env.PALATINE_API_URL,
+        model: env.PALATINE_MODEL,
+        language: env.PALATINE_LANGUAGE,
+        timeout: env.PALATINE_TIMEOUT ? parseInt(env.PALATINE_TIMEOUT) : undefined,
+        maxRetries: env.PALATINE_MAX_RETRIES ? parseInt(env.PALATINE_MAX_RETRIES) : undefined
+      });
+    }
+
     if (env.NEXARA_API_KEY) {
       return this.create('nexara', {
         apiKey: env.NEXARA_API_KEY,
@@ -144,6 +157,14 @@ class ProviderFactory {
 
     // Provider-specific configuration mapping
     const configMaps = {
+      palatine: {
+        apiKey: env.PALATINE_API_KEY,
+        apiUrl: env.PALATINE_API_URL,
+        model: env.PALATINE_MODEL,
+        language: env.PALATINE_LANGUAGE,
+        timeout: env.PALATINE_TIMEOUT ? parseInt(env.PALATINE_TIMEOUT) : undefined,
+        maxRetries: env.PALATINE_MAX_RETRIES ? parseInt(env.PALATINE_MAX_RETRIES) : undefined
+      },
       nexara: {
         apiKey: env.NEXARA_API_KEY,
         apiUrl: env.NEXARA_API_URL,

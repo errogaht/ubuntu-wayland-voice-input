@@ -5,10 +5,12 @@
 
 const TranscriptionProvider = require('./TranscriptionProvider');
 const NexaraProvider = require('./NexaraProvider');
+const PalatineProvider = require('./PalatineProvider');
 const ProviderFactory = require('./ProviderFactory');
 
 module.exports = {
   TranscriptionProvider,
   NexaraProvider,
+  PalatineProvider,
   ProviderFactory
 };
