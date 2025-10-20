@@ -1,5 +1,5 @@
 const SimpleAudioRecorder = require('./SimpleAudioRecorder');
-const NexaraTranscriber = require('./NexaraTranscriber');
+const ProviderFactory = require('./providers/ProviderFactory');
 const ClipboardManager = require('./ClipboardManager');
 const SimpleSoundNotifier = require('./SimpleSoundNotifier');
 const { createLogger } = require('./LogManager');
@@ -11,20 +11,41 @@ class VoiceInputApp {
     this.config = {
       recordingTimeoutMs: config.recordingTimeoutMs || 5000,
       typingDelay: config.typingDelay || 100,
-      nexaraApiKey: config.nexaraApiKey || process.env.NEXARA_API_KEY,
       maxBackupRecordings: config.maxBackupRecordings || 5,
+      transcriptionProvider: config.transcriptionProvider || process.env.TRANSCRIPTION_PROVIDER,
       ...config
     };
 
-    if (!this.config.nexaraApiKey) {
-      throw new Error('NEXARA_API_KEY environment variable is required or pass nexaraApiKey in config');
+    // Create transcription provider using factory
+    try {
+      if (this.config.transcriptionProvider) {
+        // Use explicitly specified provider
+        this.transcriber = ProviderFactory.create(
+          this.config.transcriptionProvider,
+          ProviderFactory._buildConfigFromEnv(this.config.transcriptionProvider, process.env)
+        );
+      } else {
+        // Auto-detect provider from environment
+        this.transcriber = ProviderFactory.autoDetect(process.env);
+      }
+    } catch (error) {
+      console.error('[VoiceInputApp] Transcription provider initialization failed:', error.message);
+      console.error('\nAvailable providers:', ProviderFactory.getAvailableProviders().join(', '));
+      console.error('\nProvider requirements:');
+      ProviderFactory.getAllRequirements().forEach(req => {
+        console.error(`\n${req.name}:`);
+        console.error(`  Required: ${req.configKeys.join(', ')}`);
+        if (req.optionalKeys) {
+          console.error(`  Optional: ${req.optionalKeys.join(', ')}`);
+        }
+        console.error(`  ${req.documentation}`);
+      });
+      throw error;
     }
 
     this.audioRecorder = new SimpleAudioRecorder({
       device: 'default'
     });
-
-    this.transcriber = new NexaraTranscriber(this.config.nexaraApiKey);
 
     this.clipboardManager = new ClipboardManager();
 
