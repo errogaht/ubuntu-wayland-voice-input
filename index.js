@@ -30,19 +30,9 @@ async function main() {
   let app = null;
   
   try {
-    // Check for required environment variables
-    if (!process.env.NEXARA_API_KEY) {
-      console.error('❌ Error: NEXARA_API_KEY is required');
-      console.log('\nPlease create a .env file with your Nexara API key:');
-      console.log('NEXARA_API_KEY=your_api_key_here');
-      processManager.cleanup();
-      process.exit(1);
-    }
-
     // Create and initialize the application
-    app = new VoiceInputApp({
-      nexaraApiKey: process.env.NEXARA_API_KEY
-    });
+    // Provider will be auto-detected from environment variables
+    app = new VoiceInputApp();
 
     await app.initialize();
 
@@ -85,11 +75,13 @@ async function main() {
       console.log('2. Test clipboard: echo "test" | xclip -selection clipboard');
     }
     
-    if (error.message.includes('Nexara') || error.message.includes('API')) {
-      console.log('\n🔧 Troubleshooting API issues:');
-      console.log('1. Check API key in .env file');
-      console.log('2. Verify internet connection');
-      console.log('3. Check Nexara API status');
+    if (error.message.includes('API') || error.message.includes('provider') || error.message.includes('transcription')) {
+      console.log('\n🔧 Troubleshooting transcription provider issues:');
+      console.log('1. Check API key in .env file (PALATINE_API_KEY or NEXARA_API_KEY)');
+      console.log('2. Set TRANSCRIPTION_PROVIDER in .env (palatine or nexara)');
+      console.log('3. Run: node list-providers.js');
+      console.log('4. Verify internet connection');
+      console.log('5. Check provider API status');
     }
     
     processManager.cleanup();
