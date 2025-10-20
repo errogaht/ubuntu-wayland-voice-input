@@ -16,8 +16,9 @@ class PalatineProvider extends TranscriptionProvider {
     }
 
     this.apiKey = config.apiKey;
-    this.apiUrl = config.apiUrl || 'https://speech.palatine.ru/v1/audio/transcriptions';
-    this.model = config.model || 'whisper-1';
+    // Correct API endpoint (OpenAI-compatible format)
+    this.apiUrl = config.apiUrl || 'https://api.palatine.ru/api/v1/audio/transcriptions';
+    this.model = config.model || 'palatine_audio';
     this.language = config.language || 'ru'; // Russian by default
     this.timeout = config.timeout || 180000; // 3 minutes default (longer for better reliability)
     this.maxRetries = config.maxRetries || 3;
@@ -38,15 +39,13 @@ class PalatineProvider extends TranscriptionProvider {
           contentType: 'audio/wav'
         });
 
-        // Note: Palatine may not need model parameter like OpenAI
-        // Commenting out optional parameters for initial testing
-        // if (this.model) {
-        //   formData.append('model', this.model);
-        // }
+        // Palatine uses OpenAI-compatible format
+        formData.append('model', this.model);
 
-        // if (this.language) {
-        //   formData.append('language', this.language);
-        // }
+        // Optional: language parameter for better accuracy
+        if (this.language) {
+          formData.append('language', this.language);
+        }
 
         const response = await axios.post(this.apiUrl, formData, {
           headers: {
