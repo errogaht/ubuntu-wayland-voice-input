@@ -19,7 +19,9 @@ class PalatineProvider extends TranscriptionProvider {
     // Correct API endpoint (OpenAI-compatible format)
     this.apiUrl = config.apiUrl || 'https://api.palatine.ru/api/v1/audio/transcriptions';
     this.model = config.model || 'palatine_audio';
-    this.language = config.language || 'ru'; // Russian by default
+    // Language is optional - if not set, API will auto-detect language
+    // Only set if explicitly provided to force specific language
+    this.language = config.language; // undefined = auto-detect, 'ru'/'en'/etc = force language
     this.timeout = config.timeout || 180000; // 3 minutes default (longer for better reliability)
     this.maxRetries = config.maxRetries || 3;
   }
@@ -42,9 +44,14 @@ class PalatineProvider extends TranscriptionProvider {
         // Palatine uses OpenAI-compatible format
         formData.append('model', this.model);
 
-        // Optional: language parameter for better accuracy
+        // Optional: language parameter
+        // If not provided, API will auto-detect language from audio
+        // Only add if explicitly set to force specific language
         if (this.language) {
+          console.log(`[${PalatineProvider.getProviderName()}] Forcing language: ${this.language}`);
           formData.append('language', this.language);
+        } else {
+          console.log(`[${PalatineProvider.getProviderName()}] Auto-detecting language from audio`);
         }
 
         const response = await axios.post(this.apiUrl, formData, {
@@ -149,9 +156,10 @@ class PalatineProvider extends TranscriptionProvider {
         'PALATINE_MAX_RETRIES'
       ],
       documentation:
-        'Russian Speech-to-Text service\n' +
+        'High-accuracy Speech-to-Text service\n' +
         'Get API key from https://speech.palatine.ru/\n' +
-        'High accuracy for Russian language\n' +
+        'Automatic language detection (default)\n' +
+        'Set PALATINE_LANGUAGE=ru/en/etc to force specific language\n' +
         'Supports 57 languages, 23+ file formats\n' +
         'Real-time processing with word timestamps'
     };
