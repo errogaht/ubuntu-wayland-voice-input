@@ -12,6 +12,9 @@ class VoiceInputApp {
       recordingTimeoutMs: config.recordingTimeoutMs || 5000,
       typingDelay: config.typingDelay || 100,
       maxBackupRecordings: config.maxBackupRecordings || 5,
+      deleteBackupAfterSuccess: config.deleteBackupAfterSuccess !== undefined
+        ? config.deleteBackupAfterSuccess
+        : (process.env.DELETE_BACKUP_AFTER_SUCCESS !== 'false'), // Default: true, unless explicitly set to 'false'
       transcriptionProvider: config.transcriptionProvider || process.env.TRANSCRIPTION_PROVIDER,
       ...config
     };
@@ -210,8 +213,12 @@ class VoiceInputApp {
       const transcription = await this.transcribeAudio(audioBuffer);
       await this.copyText(transcription);
 
-      // Delete backup after successful transcription
-      this.deleteBackup();
+      // Delete backup after successful transcription (if enabled)
+      if (this.config.deleteBackupAfterSuccess) {
+        this.deleteBackup();
+      } else {
+        console.log('💾 Backup retained:', this.backupFilePath);
+      }
 
       console.log('✅ Completed');
       this.logger.logSession(this.sessionId, 'SESSION_COMPLETE');

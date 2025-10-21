@@ -51,11 +51,11 @@ voice-input/
 3. 🎬 **Short pop sound** - application starts recording audio from microphone
 4. **Second hotkey press**: 🛑 **Long pop sound** - stops recording and starts processing
 5. 💾 Audio is automatically backed up to `var/recordings/`
-6. Audio is sent to configured transcription provider (Nexara, OpenAI, etc.)
+6. Audio is sent to configured transcription provider (Palatine, Nexara, etc.)
 7. Transcribed text is copied to clipboard
 8. 📋 **Short pop sound** - notifies that text is ready
 9. User presses Ctrl+V in any application to paste
-10. 🗑️ Backup is automatically deleted after successful transcription
+10. 💾 Backup is kept in `var/recordings/` (configurable via `DELETE_BACKUP_AFTER_SUCCESS`)
 
 ## System Dependencies
 
