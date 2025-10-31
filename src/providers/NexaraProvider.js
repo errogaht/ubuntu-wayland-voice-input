@@ -3,8 +3,9 @@ const FormData = require('form-data');
 const TranscriptionProvider = require('./TranscriptionProvider');
 
 /**
- * Nexara API Transcription Provider (Whisper)
+ * Nexara API Transcription Provider
  * Documentation: https://nexara.ru/
+ * Available models: nexara-1 (default, experimental), whisper-1 (legacy)
  */
 class NexaraProvider extends TranscriptionProvider {
   constructor(config) {
@@ -16,7 +17,7 @@ class NexaraProvider extends TranscriptionProvider {
 
     this.apiKey = config.apiKey;
     this.apiUrl = config.apiUrl || 'https://api.nexara.ru/api/v1/audio/transcriptions';
-    this.model = config.model || 'whisper-1';
+    this.model = config.model || 'nexara-1'; // Updated to use new Nexara experimental model
     this.timeout = config.timeout || 120000; // 2 minutes default
     this.maxRetries = config.maxRetries || 10;
   }
@@ -111,7 +112,7 @@ class NexaraProvider extends TranscriptionProvider {
       name: this.getProviderName(),
       configKeys: ['NEXARA_API_KEY'],
       optionalKeys: ['NEXARA_API_URL', 'NEXARA_MODEL', 'NEXARA_TIMEOUT', 'NEXARA_MAX_RETRIES'],
-      documentation: 'Get API key from https://nexara.ru/\nSupports Whisper model for speech recognition'
+      documentation: 'Get API key from https://nexara.ru/\nAvailable models: nexara-1 (default, experimental), whisper-1 (legacy)\nSet NEXARA_MODEL in .env to switch between models'
     };
   }
 }
