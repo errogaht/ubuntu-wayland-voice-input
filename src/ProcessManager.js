@@ -8,6 +8,9 @@ class ProcessManager {
 
   async checkAndStopExisting() {
     try {
+      // FIRST: Kill any orphaned arecord processes
+      await this.killOrphanedRecordingProcesses();
+
       // Check if PID file exists
       if (!fs.existsSync(this.pidFile)) {
         return false; // No existing process
@@ -26,26 +29,71 @@ class ProcessManager {
       // Check if process is still running
       if (this.isProcessRunning(existingPid)) {
         console.log(`🛑 Stopping recording (PID: ${existingPid})`);
-        
+
         try {
           // Send stop signal instead of killing
           process.kill(existingPid, 'SIGUSR1');
           console.log('📡 Stop signal sent to recording process');
-          
+
         } catch (error) {
           console.log('⚠️ Failed to send stop signal:', error.message);
         }
-        
+
         return true; // Sent stop signal
       } else {
         // PID file exists but process is dead, clean up
         fs.unlinkSync(this.pidFile);
         return false; // No running process
       }
-      
+
     } catch (error) {
       console.error('⚠️ Error checking existing process:', error.message);
       return false;
+    }
+  }
+
+  /**
+   * Kill any orphaned arecord processes from previous crashed sessions
+   */
+  async killOrphanedRecordingProcesses() {
+    try {
+      const { execSync } = require('child_process');
+
+      // Find all arecord processes that match our pattern
+      const psOutput = execSync('ps aux | grep "arecord.*voice-input" | grep -v grep || true', {
+        encoding: 'utf8'
+      });
+
+      if (!psOutput || psOutput.trim().length === 0) {
+        return; // No orphaned processes
+      }
+
+      // Parse PIDs from ps output
+      const lines = psOutput.trim().split('\n');
+      const orphanedPids = [];
+
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 2) {
+          const pid = parseInt(parts[1]);
+          if (!isNaN(pid)) {
+            orphanedPids.push(pid);
+          }
+        }
+      }
+
+      // Kill each orphaned process
+      for (const pid of orphanedPids) {
+        try {
+          process.kill(pid, 'SIGTERM');
+          console.log(`🧹 Killed orphaned arecord process (PID: ${pid})`);
+        } catch (error) {
+          // Process might already be dead
+        }
+      }
+
+    } catch (error) {
+      // Ignore errors - this is best-effort cleanup
     }
   }
 
