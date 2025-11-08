@@ -8,13 +8,15 @@ class ProcessManager {
 
   async checkAndStopExisting() {
     try {
-      // FIRST: Kill any orphaned arecord processes
-      await this.killOrphanedRecordingProcesses();
-
-      // Check if PID file exists
+      // Check if PID file exists FIRST (fast check)
       if (!fs.existsSync(this.pidFile)) {
+        // No PID file = first start, skip heavy orphan cleanup
         return false; // No existing process
       }
+
+      // Only kill orphaned processes if we have a PID file
+      // (meaning we're stopping a recording, not starting fresh)
+      await this.killOrphanedRecordingProcesses();
 
       // Read PID from file
       const pidStr = fs.readFileSync(this.pidFile, 'utf8').trim();

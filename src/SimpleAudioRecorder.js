@@ -29,10 +29,10 @@ class SimpleAudioRecorder extends EventEmitter {
     return new Promise((resolve, reject) => {
       try {
         console.log('🔴 Recording started - press hotkey again to stop');
-        
+
         // Create temporary file for recording
         this.tempFile = path.join('/tmp', `voice-input-${Date.now()}.wav`);
-        
+
         // Start arecord process
         const arecordArgs = [
           '-D', this.options.device,

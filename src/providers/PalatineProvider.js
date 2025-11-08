@@ -16,9 +16,9 @@ class PalatineProvider extends TranscriptionProvider {
     }
 
     this.apiKey = config.apiKey;
-    // Correct API endpoint (OpenAI-compatible format)
+    // Palatine OpenAI-compatible synchronous endpoint (returns result immediately)
     this.apiUrl = config.apiUrl || 'https://api.palatine.ru/api/v1/audio/transcriptions';
-    this.model = config.model || 'palatine_audio';
+    this.model = config.model || 'palatine_large_turbo';
     // Language is optional - if not set, API will auto-detect language
     // Only set if explicitly provided to force specific language
     this.language = config.language; // undefined = auto-detect, 'ru'/'en'/etc = force language
@@ -41,12 +41,10 @@ class PalatineProvider extends TranscriptionProvider {
           contentType: 'audio/wav'
         });
 
-        // Palatine uses OpenAI-compatible format
+        // OpenAI-compatible format
         formData.append('model', this.model);
 
-        // Optional: language parameter
-        // If not provided, API will auto-detect language from audio
-        // Only add if explicitly set to force specific language
+        // Optional: language parameter for auto-detection or forced language
         if (this.language) {
           console.log(`[${PalatineProvider.getProviderName()}] Forcing language: ${this.language}`);
           formData.append('language', this.language);
@@ -54,6 +52,7 @@ class PalatineProvider extends TranscriptionProvider {
           console.log(`[${PalatineProvider.getProviderName()}] Auto-detecting language from audio`);
         }
 
+        // Synchronous request - waits for complete response
         const response = await axios.post(this.apiUrl, formData, {
           headers: {
             'Authorization': `Bearer ${this.apiKey}`,
@@ -62,8 +61,8 @@ class PalatineProvider extends TranscriptionProvider {
           timeout: this.timeout
         });
 
-        // Extract transcription from response
-        const transcription = response.data.text || response.data.transcription;
+        // Extract transcription from OpenAI-compatible response
+        const transcription = response.data.text;
 
         if (!transcription || transcription.trim().length === 0) {
           throw new Error('Empty transcription result');
@@ -160,6 +159,7 @@ class PalatineProvider extends TranscriptionProvider {
         'Get API key from https://speech.palatine.ru/\n' +
         'Automatic language detection (default)\n' +
         'Set PALATINE_LANGUAGE=ru/en/etc to force specific language\n' +
+        'Models: palatine_large_turbo (default, high quality) or palatine_small (faster)\n' +
         'Supports 57 languages, 23+ file formats\n' +
         'Real-time processing with word timestamps'
     };

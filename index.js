@@ -9,10 +9,10 @@ const ProcessManager = require('./src/ProcessManager');
 async function main() {
   console.log('🎤 Voice Input - Starting...');
   console.log('=====================================');
-  
+
   // Create process manager
   const processManager = new ProcessManager();
-  
+
   // Check if already running and send stop signal if so
   const sentStopSignal = await processManager.checkAndStopExisting();
   if (sentStopSignal) {
@@ -20,15 +20,15 @@ async function main() {
     console.log('=====================================');
     process.exit(0);
   }
-  
+
   // Create PID file for new process
   processManager.createPidFile();
-  
+
   // Setup cleanup handlers
   processManager.setupCleanupHandlers();
-  
+
   let app = null;
-  
+
   try {
     // Create and initialize the application
     // Provider will be auto-detected from environment variables
@@ -38,13 +38,13 @@ async function main() {
 
     // Setup stop handler for SIGUSR1 signal and run the voice input session
     let stopRecordingCallback = null;
-    
+
     processManager.setupStopHandler(() => {
       if (stopRecordingCallback) {
         stopRecordingCallback();
       }
     });
-    
+
     // Run the voice input session with stop callback
     await app.run((stopHandler) => {
       stopRecordingCallback = stopHandler;

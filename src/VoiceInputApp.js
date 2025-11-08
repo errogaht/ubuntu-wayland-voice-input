@@ -19,32 +19,9 @@ class VoiceInputApp {
       ...config
     };
 
-    // Create transcription provider using factory
-    try {
-      if (this.config.transcriptionProvider) {
-        // Use explicitly specified provider
-        this.transcriber = ProviderFactory.create(
-          this.config.transcriptionProvider,
-          ProviderFactory._buildConfigFromEnv(this.config.transcriptionProvider, process.env)
-        );
-      } else {
-        // Auto-detect provider from environment
-        this.transcriber = ProviderFactory.autoDetect(process.env);
-      }
-    } catch (error) {
-      console.error('[VoiceInputApp] Transcription provider initialization failed:', error.message);
-      console.error('\nAvailable providers:', ProviderFactory.getAvailableProviders().join(', '));
-      console.error('\nProvider requirements:');
-      ProviderFactory.getAllRequirements().forEach(req => {
-        console.error(`\n${req.name}:`);
-        console.error(`  Required: ${req.configKeys.join(', ')}`);
-        if (req.optionalKeys) {
-          console.error(`  Optional: ${req.optionalKeys.join(', ')}`);
-        }
-        console.error(`  ${req.documentation}`);
-      });
-      throw error;
-    }
+    // Lazy loading: Don't create transcription provider until needed
+    // This saves ~50-100ms on startup
+    this.transcriber = null;
 
     this.audioRecorder = new SimpleAudioRecorder({
       device: 'default'
@@ -58,6 +35,7 @@ class VoiceInputApp {
 
     this.logger = createLogger();
     this.sessionId = this.generateSessionId();
+
     this.isRunning = false;
     this.backupFilePath = null;
     this.backupDir = path.join(__dirname, '../var/recordings');
@@ -142,35 +120,25 @@ class VoiceInputApp {
   async initialize() {
     console.log('🎤 Initializing...');
     this.logger.logSession(this.sessionId, 'INIT_START');
-    
+
     try {
-      // Detecting microphone
-      
       // Get the default microphone from Ubuntu settings
       const defaultDevice = await SimpleAudioRecorder.getDefaultMicrophone();
-      
+
       // Recreate SimpleAudioRecorder with the correct device
       this.audioRecorder = new SimpleAudioRecorder({
         device: defaultDevice
       });
-      
-      // Checking system
-      
-      const microphoneOk = await SimpleAudioRecorder.checkMicrophoneAccess();
-      if (!microphoneOk) {
-        throw new Error('Microphone access failed. Please check microphone permissions and PulseAudio configuration.');
-      }
 
-      const clipboardOk = await ClipboardManager.checkInstallation();
-      if (!clipboardOk) {
-        throw new Error('wl-clipboard not available. Install: sudo apt install wl-clipboard');
-      }
+      // Skip system checks on startup - they'll fail naturally if something is wrong
+      // This saves ~20-30ms on each start
+      // Old code checked: checkMicrophoneAccess(), checkClipboardInstallation()
 
       await this.soundNotifier.initialize();
 
       console.log('✅ Ready');
       this.logger.logSession(this.sessionId, 'INIT_SUCCESS');
-      
+
     } catch (error) {
       console.error('[VoiceInputApp] Initialization failed:', error.message);
       this.logger.logError(this.sessionId, error, 'initialization');
@@ -185,12 +153,12 @@ class VoiceInputApp {
     }
 
     this.isRunning = true;
-    
+
     try {
       console.log('🎤 Starting recording...');
       console.log('🔴 Press hotkey again to stop recording');
       this.logger.logSession(this.sessionId, 'RECORDING_START');
-      
+
       // Start recording and wait for manual stop
       const startTime = Date.now();
       const audioBuffer = await this.startRecordingAndWaitForStop(stopCallback);
@@ -282,10 +250,49 @@ class VoiceInputApp {
   }
 
 
+  /**
+   * Lazy-load transcription provider when first needed
+   * @private
+   */
+  _ensureTranscriberLoaded() {
+    if (this.transcriber) {
+      return; // Already loaded
+    }
+
+    try {
+      if (this.config.transcriptionProvider) {
+        // Use explicitly specified provider
+        this.transcriber = ProviderFactory.create(
+          this.config.transcriptionProvider,
+          ProviderFactory._buildConfigFromEnv(this.config.transcriptionProvider, process.env)
+        );
+      } else {
+        // Auto-detect provider from environment
+        this.transcriber = ProviderFactory.autoDetect(process.env);
+      }
+    } catch (error) {
+      console.error('[VoiceInputApp] Transcription provider initialization failed:', error.message);
+      console.error('\nAvailable providers:', ProviderFactory.getAvailableProviders().join(', '));
+      console.error('\nProvider requirements:');
+      ProviderFactory.getAllRequirements().forEach(req => {
+        console.error(`\n${req.name}:`);
+        console.error(`  Required: ${req.configKeys.join(', ')}`);
+        if (req.optionalKeys) {
+          console.error(`  Optional: ${req.optionalKeys.join(', ')}`);
+        }
+        console.error(`  ${req.documentation}`);
+      });
+      throw error;
+    }
+  }
+
   async transcribeAudio(audioBuffer) {
     if (!audioBuffer || audioBuffer.length === 0) {
       throw new Error('No audio data recorded');
     }
+
+    // Lazy load transcription provider
+    this._ensureTranscriberLoaded();
 
     console.log('🔄 Transcribing...');
     

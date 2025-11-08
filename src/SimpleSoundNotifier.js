@@ -24,7 +24,7 @@ class SimpleSoundNotifier {
 
   async playSound(soundFile) {
     if (!this.options.enabled) return;
-    
+
     return new Promise((resolve) => {
       // Try paplay first (works with both MP3 and WAV)
       // Use lower volume for error sound
@@ -43,11 +43,11 @@ class SimpleSoundNotifier {
           const fallbackProcess = spawn('mpg123', ['-q', soundFile], {
             stdio: 'ignore'
           });
-          
+
           fallbackProcess.on('close', () => {
             resolve();
           });
-          
+
           fallbackProcess.on('error', () => {
             resolve(); // Silent fail
           });
@@ -56,11 +56,11 @@ class SimpleSoundNotifier {
           const fallbackProcess = spawn('aplay', ['-q', soundFile], {
             stdio: 'ignore'
           });
-          
+
           fallbackProcess.on('close', () => {
             resolve();
           });
-          
+
           fallbackProcess.on('error', () => {
             resolve(); // Silent fail
           });
