@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Voice Input Tray
+Comment=Voice Input system tray configuration
+Exec=/home/errogaht/aiprojects/voice-input/tray-app.py
+Icon=microphone-sensitivity-high
+Terminal=false
+Categories=Utility;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true

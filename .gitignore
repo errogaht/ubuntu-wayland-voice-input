@@ -54,3 +54,7 @@ build/
 
 # Claude Code temporary files
 .claude-temp/
+
+# Test files
+test-*.js
+test-*.sh

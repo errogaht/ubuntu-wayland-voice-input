@@ -39,10 +39,48 @@ class VoiceInputApp {
     this.isRunning = false;
     this.backupFilePath = null;
     this.backupDir = path.join(__dirname, '../var/recordings');
+    this.configFilePath = path.join(__dirname, '../config.json');
+
+    // Load UI settings from config.json
+    this.uiConfig = this.loadUIConfig();
   }
 
   generateSessionId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+  }
+
+  /**
+   * Load UI configuration from config.json
+   * @returns {Object} UI configuration
+   */
+  loadUIConfig() {
+    try {
+      if (fs.existsSync(this.configFilePath)) {
+        const configData = fs.readFileSync(this.configFilePath, 'utf8');
+        return JSON.parse(configData);
+      }
+    } catch (error) {
+      console.error('[VoiceInputApp] Failed to load UI config:', error.message);
+    }
+
+    // Return default config if file doesn't exist or is invalid
+    return {
+      mode: 'normal',
+      addPrefix: true,
+      addSuffix: true,
+      notebookBuffer: []
+    };
+  }
+
+  /**
+   * Save UI configuration to config.json
+   */
+  saveUIConfig() {
+    try {
+      fs.writeFileSync(this.configFilePath, JSON.stringify(this.uiConfig, null, 2), 'utf8');
+    } catch (error) {
+      console.error('[VoiceInputApp] Failed to save UI config:', error.message);
+    }
   }
 
   /**
@@ -179,7 +217,25 @@ class VoiceInputApp {
       await this.saveRecordingBackup(audioBuffer);
 
       const transcription = await this.transcribeAudio(audioBuffer);
-      await this.copyText(transcription);
+
+      // Reload config to check current mode
+      this.uiConfig = this.loadUIConfig();
+
+      if (this.uiConfig.mode === 'notebook') {
+        // Notebook mode: accumulate transcriptions
+        console.log('📓 Notebook mode: adding to buffer');
+        this.uiConfig.notebookBuffer.push(transcription);
+        this.saveUIConfig();
+
+        // Copy accumulated buffer (join with newline)
+        const accumulatedText = this.uiConfig.notebookBuffer.join('\n');
+        await this.copyText(accumulatedText);
+
+        console.log(`📓 Buffer size: ${this.uiConfig.notebookBuffer.length} recordings`);
+      } else {
+        // Normal mode: copy single transcription
+        await this.copyText(transcription);
+      }
 
       // Delete backup after successful transcription (if enabled)
       if (this.config.deleteBackupAfterSuccess) {
@@ -320,6 +376,7 @@ class VoiceInputApp {
   /**
    * Format text into multiple lines by wrapping at word boundaries
    * Keeps lines around 120 characters for comfortable reading
+   * Preserves existing line breaks (important for Notebook Mode)
    * @param {string} text - The text to format
    * @returns {string} - Formatted multi-line text
    */
@@ -329,37 +386,49 @@ class VoiceInputApp {
     }
 
     const maxLineLength = 120; // Maximum line length for readability
-    const words = text.split(/\s+/); // Split by whitespace
-    const lines = [];
-    let currentLine = '';
 
-    for (const word of words) {
-      if (!word) continue;
+    // Split by newlines first to preserve them (Notebook Mode)
+    const existingLines = text.split('\n');
+    const formattedLines = [];
 
-      // If current line is empty, start with this word
-      if (currentLine.length === 0) {
-        currentLine = word;
-      } else {
-        // Check if adding this word would exceed the recommended length
-        const potentialLine = currentLine + ' ' + word;
+    // Process each existing line separately
+    for (const line of existingLines) {
+      if (!line.trim()) {
+        formattedLines.push(''); // Preserve empty lines
+        continue;
+      }
 
-        if (potentialLine.length <= maxLineLength) {
-          // Fits on current line
-          currentLine = potentialLine;
-        } else {
-          // Current line is full, save it and start a new line
-          lines.push(currentLine);
+      const words = line.split(/\s+/); // Split by whitespace (but not newlines)
+      let currentLine = '';
+
+      for (const word of words) {
+        if (!word) continue;
+
+        // If current line is empty, start with this word
+        if (currentLine.length === 0) {
           currentLine = word;
+        } else {
+          // Check if adding this word would exceed the recommended length
+          const potentialLine = currentLine + ' ' + word;
+
+          if (potentialLine.length <= maxLineLength) {
+            // Fits on current line
+            currentLine = potentialLine;
+          } else {
+            // Current line is full, save it and start a new line
+            formattedLines.push(currentLine);
+            currentLine = word;
+          }
         }
+      }
+
+      // Add the last line
+      if (currentLine.length > 0) {
+        formattedLines.push(currentLine);
       }
     }
 
-    // Add the last line
-    if (currentLine.length > 0) {
-      lines.push(currentLine);
-    }
-
-    return lines.join('\n');
+    return formattedLines.join('\n');
   }
 
   async copyText(text) {
@@ -368,21 +437,35 @@ class VoiceInputApp {
       return;
     }
 
+    // Reload config to get latest settings from tray
+    this.uiConfig = this.loadUIConfig();
+
     // Format text into multiple lines for better readability
     const formattedText = this.formatTextToMultiLine(text);
-    const textWithPrefixAndSuffix = '[Voice - verify]: ' + formattedText + '. ultrathink';
-    console.log(`💬 Text: "${textWithPrefixAndSuffix}"`);
+
+    // Apply prefix/suffix based on config
+    let finalText = formattedText;
+
+    if (this.uiConfig.addPrefix) {
+      finalText = '[Voice - verify]: ' + finalText;
+    }
+
+    if (this.uiConfig.addSuffix) {
+      finalText = finalText + '. ultrathink';
+    }
+
+    console.log(`💬 Text: "${finalText}"`);
 
     try {
       // Copy text to clipboard
-      await this.clipboardManager.copyText(textWithPrefixAndSuffix);
+      await this.clipboardManager.copyText(finalText);
 
       // Play ready sound - double beep indicates text is ready to paste
       console.log('🔊 Playing ready sound...');
       await this.soundNotifier.playTextReady();
 
       console.log('📋 Text copied! Press Ctrl+V to paste anywhere.');
-      this.logger.logSession(this.sessionId, 'CLIPBOARD_SUCCESS', { textLength: textWithPrefixAndSuffix.length });
+      this.logger.logSession(this.sessionId, 'CLIPBOARD_SUCCESS', { textLength: finalText.length });
 
     } catch (error) {
       console.error('❌ Clipboard copy failed:', error.message);
