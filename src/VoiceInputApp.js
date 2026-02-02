@@ -48,9 +48,13 @@ class VoiceInputApp {
     this.backupFilePath = null;
     this.backupDir = path.join(__dirname, '../var/recordings');
     this.configFilePath = path.join(__dirname, '../config.json');
+    this.vocabularyFilePath = path.join(__dirname, '../vocabulary.json');
 
     // Load UI settings from config.json
     this.uiConfig = this.loadUIConfig();
+
+    // Load custom vocabulary for post-processing
+    this.vocabulary = this.loadVocabulary();
   }
 
   generateSessionId() {
@@ -78,6 +82,66 @@ class VoiceInputApp {
       addSuffix: true,
       notebookBuffer: []
     };
+  }
+
+  /**
+   * Load custom vocabulary from vocabulary.json for post-processing
+   * @returns {Object|null} Vocabulary object with replacements or null
+   */
+  loadVocabulary() {
+    try {
+      if (fs.existsSync(this.vocabularyFilePath)) {
+        const vocabData = fs.readFileSync(this.vocabularyFilePath, 'utf8');
+        const vocab = JSON.parse(vocabData);
+        if (vocab.replacements && Object.keys(vocab.replacements).length > 0) {
+          console.log(`📖 Loaded vocabulary: ${Object.keys(vocab.replacements).length} replacements`);
+          return vocab;
+        }
+      }
+    } catch (error) {
+      console.error('[VoiceInputApp] Failed to load vocabulary:', error.message);
+    }
+    return null;
+  }
+
+  /**
+   * Apply vocabulary replacements to transcription text
+   * Case-insensitive matching, preserves original case boundaries
+   * @param {string} text - Transcription text
+   * @returns {string} - Text with replacements applied
+   */
+  applyVocabulary(text) {
+    if (!this.vocabulary || !this.vocabulary.replacements || !text) {
+      return text;
+    }
+
+    let result = text;
+    let replacementCount = 0;
+
+    for (const [pattern, replacement] of Object.entries(this.vocabulary.replacements)) {
+      // Create case-insensitive regex with word boundaries
+      const regex = new RegExp(`\\b${this.escapeRegex(pattern)}\\b`, 'gi');
+      const before = result;
+      result = result.replace(regex, replacement);
+      if (result !== before) {
+        replacementCount++;
+      }
+    }
+
+    if (replacementCount > 0) {
+      console.log(`📖 Applied ${replacementCount} vocabulary replacements`);
+    }
+
+    return result;
+  }
+
+  /**
+   * Escape special regex characters in a string
+   * @param {string} string - String to escape
+   * @returns {string} - Escaped string
+   */
+  escapeRegex(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   /**
@@ -370,7 +434,11 @@ class VoiceInputApp {
     console.log('🔄 Transcribing...');
     
     try {
-      const transcription = await this.transcriber.transcribe(audioBuffer);
+      let transcription = await this.transcriber.transcribe(audioBuffer);
+
+      // Apply vocabulary replacements (IT terms, etc.)
+      transcription = this.applyVocabulary(transcription);
+
       console.log(`✅ "${transcription}"`);
       this.logger.logTranscription(this.sessionId, transcription);
       return transcription;
