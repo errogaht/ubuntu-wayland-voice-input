@@ -1,5 +1,6 @@
 const NexaraProvider = require('./NexaraProvider');
 const PalatineProvider = require('./PalatineProvider');
+const ParakeetV3Provider = require('./ParakeetV3Provider');
 
 /**
  * Factory for creating transcription providers
@@ -8,6 +9,7 @@ class ProviderFactory {
   static providers = {
     'nexara': NexaraProvider,
     'palatine': PalatineProvider,
+    'parakeetv3': ParakeetV3Provider,
     // Add more providers here as they are implemented
     // 'openai': OpenAIProvider,
     // 'assemblyai': AssemblyAIProvider,
@@ -18,10 +20,12 @@ class ProviderFactory {
    * Create a transcription provider instance
    * @param {string} providerName - Name of the provider (case-insensitive)
    * @param {Object} config - Provider configuration
+   * @param {Object} logger - Logger instance (optional)
+   * @param {string} sessionId - Session ID for logging (optional)
    * @returns {TranscriptionProvider}
    * @throws {Error} If provider not found or invalid
    */
-  static create(providerName, config) {
+  static create(providerName, config, logger = null, sessionId = null) {
     if (!providerName) {
       throw new Error('Provider name is required');
     }
@@ -45,7 +49,7 @@ class ProviderFactory {
       );
     }
 
-    return new ProviderClass(config);
+    return new ProviderClass(config, logger, sessionId);
   }
 
   /**
@@ -103,16 +107,18 @@ class ProviderFactory {
   /**
    * Auto-detect and create provider from environment variables
    * @param {Object} env - Environment variables
+   * @param {Object} logger - Logger instance (optional)
+   * @param {string} sessionId - Session ID for logging (optional)
    * @returns {TranscriptionProvider}
    * @throws {Error} If no provider can be auto-detected
    */
-  static autoDetect(env) {
+  static autoDetect(env, logger = null, sessionId = null) {
     const providerName = env.TRANSCRIPTION_PROVIDER || env.PROVIDER;
 
     if (providerName) {
       // Use explicitly specified provider
       const config = this._buildConfigFromEnv(providerName, env);
-      return this.create(providerName, config);
+      return this.create(providerName, config, logger, sessionId);
     }
 
     // Try to auto-detect based on available API keys
@@ -124,7 +130,7 @@ class ProviderFactory {
         language: env.PALATINE_LANGUAGE,
         timeout: env.PALATINE_TIMEOUT ? parseInt(env.PALATINE_TIMEOUT) : undefined,
         maxRetries: env.PALATINE_MAX_RETRIES ? parseInt(env.PALATINE_MAX_RETRIES) : undefined
-      });
+      }, logger, sessionId);
     }
 
     if (env.NEXARA_API_KEY) {
@@ -134,7 +140,15 @@ class ProviderFactory {
         model: env.NEXARA_MODEL,
         timeout: env.NEXARA_TIMEOUT ? parseInt(env.NEXARA_TIMEOUT) : undefined,
         maxRetries: env.NEXARA_MAX_RETRIES ? parseInt(env.NEXARA_MAX_RETRIES) : undefined
-      });
+      }, logger, sessionId);
+    }
+
+    // Parakeet V3 - local CPU transcription
+    if (env.PARAKEET_MODEL_PATH) {
+      return this.create('parakeetv3', {
+        modelPath: env.PARAKEET_MODEL_PATH,
+        numThreads: env.PARAKEET_NUM_THREADS ? parseInt(env.PARAKEET_NUM_THREADS) : undefined
+      }, logger, sessionId);
     }
 
     // Add more auto-detection logic here for other providers
@@ -171,6 +185,10 @@ class ProviderFactory {
         model: env.NEXARA_MODEL,
         timeout: env.NEXARA_TIMEOUT ? parseInt(env.NEXARA_TIMEOUT) : undefined,
         maxRetries: env.NEXARA_MAX_RETRIES ? parseInt(env.NEXARA_MAX_RETRIES) : undefined
+      },
+      parakeetv3: {
+        modelPath: env.PARAKEET_MODEL_PATH,
+        numThreads: env.PARAKEET_NUM_THREADS ? parseInt(env.PARAKEET_NUM_THREADS) : undefined
       }
       // Add more provider configs here
     };

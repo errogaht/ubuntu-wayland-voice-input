@@ -9,6 +9,7 @@ Voice Input is a Node.js application for Ubuntu 25.04 with Wayland that allows r
 ## Features
 
 - 🎤 **Audio Recording** from active microphone (start/stop via hotkey)
+- 🗜️ **Audio Compression** - Opus/MP3 compression (~88% bandwidth savings)
 - 🔊 **Speech Transcription** via multiple providers (Nexara, OpenAI, etc.)
 - 🔄 **Provider System** - easily switch between transcription services
 - 📋 **Clipboard Integration** (Ctrl+V in any application)
@@ -50,20 +51,23 @@ voice-input/
 2. **First hotkey press**: Starts recording `node /path/to/voice-input/index.js`
 3. 🎬 **Short pop sound** - application starts recording audio from microphone
 4. **Second hotkey press**: 🛑 **Long pop sound** - stops recording and starts processing
-5. 💾 Audio is automatically backed up to `var/recordings/`
-6. Audio is sent to configured transcription provider (Palatine, Nexara, etc.)
-7. Transcribed text is copied to clipboard
-8. 📋 **Short pop sound** - notifies that text is ready
-9. User presses Ctrl+V in any application to paste
-10. 💾 Backup is kept in `var/recordings/` (configurable via `DELETE_BACKUP_AFTER_SUCCESS`)
+5. 🗜️ Audio is compressed via ffmpeg (WAV → Opus, ~88% smaller) if enabled
+6. 💾 Compressed audio is automatically backed up to `var/recordings/`
+7. Audio is sent to configured transcription provider (Palatine, Nexara, etc.)
+8. Transcribed text is copied to clipboard
+9. 📋 **Short pop sound** - notifies that text is ready
+10. User presses Ctrl+V in any application to paste
+11. 💾 Backup is kept in `var/recordings/` (configurable via `DELETE_BACKUP_AFTER_SUCCESS`)
 
 ## System Dependencies
 
 ### Ubuntu Packages
 ```bash
 sudo apt update
-sudo apt install -y xclip wl-clipboard alsa-utils pulseaudio-utils
+sudo apt install -y xclip wl-clipboard alsa-utils pulseaudio-utils ffmpeg
 ```
+
+**ffmpeg** is required for audio compression (Opus/MP3). Without it, the app will fall back to uncompressed WAV.
 
 ### Node.js Dependencies  
 ```bash
@@ -119,6 +123,32 @@ To switch to a different transcription service:
 
 See `docs/ADDING_PROVIDERS.md` for adding new providers.
 
+### Audio Compression (Optional)
+
+Enable audio compression to reduce bandwidth usage by ~88%:
+
+```bash
+# Add to .env file
+ENABLE_COMPRESSION=true        # Enable compression (default: true)
+COMPRESSION_FORMAT=opus        # opus (recommended) or mp3
+COMPRESSION_BITRATE=32k        # 32k is optimal for speech
+```
+
+**Benefits:**
+- 🗜️ **88% smaller files** (54KB WAV → 6.6KB Opus)
+- 🚀 **Faster uploads** to transcription API
+- 💰 **Reduced bandwidth costs**
+- ✅ **High quality** - optimized for speech
+
+**Requirements:**
+- ffmpeg must be installed: `sudo apt install ffmpeg`
+- If ffmpeg is missing, app will automatically fall back to WAV
+
+**Test compression:**
+```bash
+node test-compression.js
+```
+
 ## Usage
 
 ### Via Hotkey (Recommended)
@@ -142,7 +172,8 @@ node index.js
 ## Technical Details
 
 - **Audio Recording**: arecord → WAV file → Buffer
-- **Audio Format**: WAV 16kHz mono
+- **Audio Format**: WAV 16kHz mono (recording) → Opus/MP3 (compression)
+- **Compression**: ffmpeg with libopus/libmp3lame (88% size reduction)
 - **Clipboard**: xclip/wl-copy (auto-detection)
 - **Transcription**: Pluggable provider system (Nexara, OpenAI, etc.)
 - **Process Management**: PID files + SIGUSR1 signals
@@ -167,6 +198,7 @@ echo "Test" | xclip -selection clipboard  # Test clipboard
 node test-sound.js                  # Test audio notifications
 node test-simple-flow.js            # Test recording flow
 node test-logs.js                   # Test logging system
+node test-compression.js            # Test audio compression (Opus/MP3)
 
 # Run Application
 node index.js                       # First press: start recording

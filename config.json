@@ -1,6 +1,6 @@
 {
   "mode": "normal",
   "addPrefix": true,
-  "addSuffix": true,
+  "addSuffix": false,
   "notebookBuffer": []
 }

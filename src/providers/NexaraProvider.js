@@ -8,8 +8,8 @@ const TranscriptionProvider = require('./TranscriptionProvider');
  * Available models: nexara-1 (default, experimental), whisper-1 (legacy)
  */
 class NexaraProvider extends TranscriptionProvider {
-  constructor(config) {
-    super(config);
+  constructor(config, logger = null, sessionId = null) {
+    super(config, logger, sessionId);
 
     if (!config.apiKey) {
       throw new Error('Nexara API key is required');
@@ -31,20 +31,49 @@ class NexaraProvider extends TranscriptionProvider {
 
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       try {
+        // Detect audio format from buffer metadata (set by SimpleAudioRecorder compression)
+        const audioFormat = audioBuffer._audioFormat || 'wav';
+        const audioExtension = audioBuffer._audioExtension || 'wav';
+        const contentType = this.getContentType(audioFormat);
+
         const formData = new FormData();
         formData.append('file', audioBuffer, {
-          filename: 'audio.wav',
-          contentType: 'audio/wav'
+          filename: `audio.${audioExtension}`,
+          contentType: contentType
         });
         formData.append('model', this.model);
 
+        // Prepare headers
+        const headers = {
+          'Authorization': `Bearer ${this.apiKey}`,
+          ...formData.getHeaders()
+        };
+
+        // Log request details
+        const bodyMeta = {
+          file: `audio.${audioExtension} (${audioBuffer.length} bytes)`,
+          model: this.model
+        };
+
+        if (this.logger && this.sessionId) {
+          this.logger.logHttpRequest(this.sessionId, 'POST', this.apiUrl, headers, bodyMeta);
+        }
+
         const response = await axios.post(this.apiUrl, formData, {
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            ...formData.getHeaders()
-          },
+          headers,
           timeout: this.timeout
         });
+
+        // Log response details
+        if (this.logger && this.sessionId) {
+          this.logger.logHttpResponse(
+            this.sessionId,
+            response.status,
+            response.statusText,
+            response.headers,
+            response.data
+          );
+        }
 
         const transcription = response.data.text;
 
@@ -77,9 +106,15 @@ class NexaraProvider extends TranscriptionProvider {
           console.error(`[${NexaraProvider.getProviderName()}] Timeout after ${this.timeout}ms - server may be overloaded`);
         }
 
+        // Log error to structured logger
+        if (this.logger && this.sessionId) {
+          this.logger.logHttpError(this.sessionId, error, this.apiUrl);
+        }
+
+        // Also log to console for CLI visibility
         if (error.response) {
-          console.error(`[${NexaraProvider.getProviderName()}] API Error:`, error.response.status, error.response.statusText);
-          console.error(`[${NexaraProvider.getProviderName()}] Response data:`, error.response.data);
+          console.error(`[${NexaraProvider.getProviderName()}] ERROR: ${error.response.status} ${error.response.statusText}`);
+          console.error(`  Response:`, error.response.data);
         } else if (error.request) {
           console.error(`[${NexaraProvider.getProviderName()}] Network error - no response received`);
         } else {
@@ -89,6 +124,24 @@ class NexaraProvider extends TranscriptionProvider {
         throw error;
       }
     }
+  }
+
+  /**
+   * Get MIME content type for audio format
+   * @param {string} format - Audio format (opus, mp3, wav, etc.)
+   * @returns {string} MIME type
+   */
+  getContentType(format) {
+    const mimeTypes = {
+      'opus': 'audio/ogg', // Opus uses OGG container
+      'ogg': 'audio/ogg',
+      'mp3': 'audio/mpeg',
+      'wav': 'audio/wav',
+      'webm': 'audio/webm',
+      'm4a': 'audio/m4a',
+      'flac': 'audio/flac'
+    };
+    return mimeTypes[format.toLowerCase()] || 'audio/wav';
   }
 
   static validateConfig(config) {

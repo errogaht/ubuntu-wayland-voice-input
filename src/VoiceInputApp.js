@@ -23,8 +23,16 @@ class VoiceInputApp {
     // This saves ~50-100ms on startup
     this.transcriber = null;
 
+    // Audio compression settings from environment
+    const enableCompression = process.env.ENABLE_COMPRESSION !== 'false'; // Default: true
+    const compressionFormat = process.env.COMPRESSION_FORMAT || 'opus';
+    const compressionBitrate = process.env.COMPRESSION_BITRATE || '32k';
+
     this.audioRecorder = new SimpleAudioRecorder({
-      device: 'default'
+      device: 'default',
+      enableCompression,
+      compressionFormat,
+      compressionBitrate
     });
 
     this.clipboardManager = new ClipboardManager();
@@ -94,14 +102,19 @@ class VoiceInputApp {
         fs.mkdirSync(this.backupDir, { recursive: true });
       }
 
-      // Save recording with session ID
-      this.backupFilePath = path.join(this.backupDir, `${this.sessionId}.wav`);
+      // Detect file extension from buffer metadata (set by compression)
+      const audioExtension = audioBuffer._audioExtension || 'wav';
+      const audioFormat = audioBuffer._audioFormat || 'wav';
+
+      // Save recording with session ID and correct extension
+      this.backupFilePath = path.join(this.backupDir, `${this.sessionId}.${audioExtension}`);
       fs.writeFileSync(this.backupFilePath, audioBuffer);
 
-      console.log(`💾 Recording backed up: ${this.backupFilePath}`);
+      console.log(`💾 Recording backed up: ${this.backupFilePath} (${audioFormat})`);
       this.logger.logSession(this.sessionId, 'BACKUP_SAVED', {
         path: this.backupFilePath,
-        size: audioBuffer.length
+        size: audioBuffer.length,
+        format: audioFormat
       });
 
       // Cleanup old backups
@@ -118,8 +131,10 @@ class VoiceInputApp {
    */
   async cleanupOldBackups() {
     try {
+      // Support all audio formats (wav, ogg, mp3, etc.)
+      const audioExtensions = ['.wav', '.ogg', '.mp3', '.opus', '.m4a', '.flac'];
       const files = fs.readdirSync(this.backupDir)
-        .filter(file => file.endsWith('.wav'))
+        .filter(file => audioExtensions.some(ext => file.endsWith(ext)))
         .map(file => ({
           name: file,
           path: path.join(this.backupDir, file),
@@ -320,11 +335,13 @@ class VoiceInputApp {
         // Use explicitly specified provider
         this.transcriber = ProviderFactory.create(
           this.config.transcriptionProvider,
-          ProviderFactory._buildConfigFromEnv(this.config.transcriptionProvider, process.env)
+          ProviderFactory._buildConfigFromEnv(this.config.transcriptionProvider, process.env),
+          this.logger,
+          this.sessionId
         );
       } else {
         // Auto-detect provider from environment
-        this.transcriber = ProviderFactory.autoDetect(process.env);
+        this.transcriber = ProviderFactory.autoDetect(process.env, this.logger, this.sessionId);
       }
     } catch (error) {
       console.error('[VoiceInputApp] Transcription provider initialization failed:', error.message);

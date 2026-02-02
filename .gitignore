@@ -48,6 +48,9 @@ Thumbs.db
 # Application data and logs
 var/
 
+# AI Models (large files, download separately)
+models/
+
 # Build output
 dist/
 build/

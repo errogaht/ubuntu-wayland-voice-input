@@ -100,6 +100,78 @@ class LogManager {
     this.logSession(sessionId, 'ERROR', errorData);
   }
 
+  // Log HTTP request details
+  logHttpRequest(sessionId, method, url, headers = {}, bodyMeta = {}) {
+    const requestData = {
+      method,
+      url,
+      headers: this.sanitizeHeaders(headers),
+      body: bodyMeta
+    };
+    this.logSession(sessionId, 'HTTP_REQUEST', requestData);
+  }
+
+  // Log HTTP response details
+  logHttpResponse(sessionId, status, statusText, headers = {}, data = null) {
+    const responseData = {
+      status,
+      statusText,
+      headers,
+      data: this.truncateData(data)
+    };
+    this.logSession(sessionId, 'HTTP_RESPONSE', responseData);
+  }
+
+  // Log HTTP error details
+  logHttpError(sessionId, error, requestUrl = null) {
+    const errorData = {
+      message: error.message,
+      requestUrl
+    };
+
+    if (error.response) {
+      errorData.status = error.response.status;
+      errorData.statusText = error.response.statusText;
+      errorData.headers = error.response.headers;
+      errorData.data = this.truncateData(error.response.data);
+    } else if (error.request) {
+      errorData.type = 'network_error';
+      errorData.details = 'No response received';
+    }
+
+    this.logSession(sessionId, 'HTTP_ERROR', errorData);
+  }
+
+  // Sanitize headers (mask sensitive data)
+  sanitizeHeaders(headers) {
+    const sanitized = { ...headers };
+    if (sanitized.Authorization) {
+      // Mask API keys/tokens - show first 10 and last 4 chars
+      const value = sanitized.Authorization.replace(/^Bearer\s+/, '');
+      if (value.length > 14) {
+        sanitized.Authorization = `Bearer ${value.substring(0, 10)}...${value.substring(value.length - 4)}`;
+      } else {
+        sanitized.Authorization = 'Bearer ***';
+      }
+    }
+    return sanitized;
+  }
+
+  // Truncate large data objects for logging
+  truncateData(data, maxLength = 1000) {
+    if (!data) return null;
+
+    const jsonString = typeof data === 'object'
+      ? JSON.stringify(data)
+      : String(data);
+
+    if (jsonString.length > maxLength) {
+      return jsonString.substring(0, maxLength) + '... (truncated)';
+    }
+
+    return data;
+  }
+
   // Get recent logs for debugging
   getRecentLogs(lines = 50) {
     try {

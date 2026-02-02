@@ -3,12 +3,14 @@
  * All transcription services must extend this class
  */
 class TranscriptionProvider {
-  constructor(config) {
+  constructor(config, logger = null, sessionId = null) {
     if (this.constructor === TranscriptionProvider) {
       throw new Error('TranscriptionProvider is abstract and cannot be instantiated directly');
     }
 
     this.config = config;
+    this.logger = logger;
+    this.sessionId = sessionId;
   }
 
   /**

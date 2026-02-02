@@ -49,11 +49,59 @@ async function main() {
     await app.run((stopHandler) => {
       stopRecordingCallback = stopHandler;
     });
-    
+
     console.log('✅ Voice input session completed successfully!');
     console.log('=====================================');
-    
-    // Cleanup and exit
+
+    // Daemon mode for Parakeet V3 - keep model in RAM
+    const isDaemonMode = process.env.PARAKEET_DAEMON_MODE === 'true' ||
+                         process.env.TRANSCRIPTION_PROVIDER === 'parakeetv3';
+
+    if (isDaemonMode) {
+      console.log('🔄 Daemon mode: waiting for next hotkey... (Ctrl+C to exit)');
+      console.log('   Model stays in RAM for instant transcription!');
+      console.log('=====================================');
+
+      // Wait for SIGUSR1 to start next recording
+      const waitForNextHotkey = () => {
+        return new Promise((resolve) => {
+          const handler = () => {
+            process.removeListener('SIGUSR1', handler);
+            resolve();
+          };
+          process.on('SIGUSR1', handler);
+        });
+      };
+
+      // Keep process alive and run sessions in loop
+      const daemonLoop = async () => {
+        while (true) {
+          try {
+            // Wait for hotkey to start new recording
+            await waitForNextHotkey();
+
+            console.log('\n🎤 New recording session...');
+            stopRecordingCallback = null;
+
+            await app.run((stopHandler) => {
+              stopRecordingCallback = stopHandler;
+            });
+
+            console.log('✅ Session completed!');
+            console.log('🔄 Waiting for next hotkey...');
+
+          } catch (error) {
+            console.error('❌ Session error:', error.message);
+            console.log('🔄 Waiting for next hotkey...');
+          }
+        }
+      };
+
+      daemonLoop();
+      return; // Don't exit
+    }
+
+    // Normal mode: cleanup and exit
     processManager.cleanup();
     process.exit(0);
     
