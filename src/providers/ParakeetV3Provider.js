@@ -224,6 +224,7 @@ class ParakeetV3Provider extends TranscriptionProvider {
         '-i', inputPath,
         '-ar', '16000',  // 16kHz sample rate
         '-ac', '1',      // Mono
+        '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11',  // Normalize audio for better recognition
         '-f', 'wav',
         '-y',
         outputPath
