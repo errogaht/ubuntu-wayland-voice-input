@@ -5,6 +5,9 @@ LAUNCHER="$PROJECT_DIR/run-transcribe-files.sh"
 LOG_FILE="$(mktemp /tmp/voice-input-nautilus.XXXXXX.log)"
 
 cleanup() {
+  if [[ -n "${PROGRESS_PID:-}" ]] && kill -0 "$PROGRESS_PID" 2>/dev/null; then
+    kill "$PROGRESS_PID" 2>/dev/null || true
+  fi
   rm -f "$LOG_FILE"
 }
 trap cleanup EXIT
@@ -38,10 +41,14 @@ fi
 
 "$LAUNCHER" "${AUDIO_FILES[@]}" >"$LOG_FILE" 2>&1 &
 TRANSCRIBE_PID=$!
+PROGRESS_PID=""
 
 if command -v zenity >/dev/null 2>&1; then
+  # Keep the progress dialog independent from the transcription process. Some
+  # Zenity/AppIndicator combinations keep a pulsating dialog visible after EOF,
+  # so we explicitly terminate it as soon as the Node process exits.
   (
-    while kill -0 "$TRANSCRIBE_PID" 2>/dev/null; do
+    while true; do
       echo "# Transcribing selected audio files..."
       sleep 1
     done
@@ -49,14 +56,19 @@ if command -v zenity >/dev/null 2>&1; then
       --title="Voice Input" \
       --text="Transcribing selected audio files..." \
       --pulsate \
-      --auto-close \
       --no-cancel \
       --width=360 \
-      2>/dev/null || true
+      2>/dev/null &
+  PROGRESS_PID=$!
 fi
 
 wait "$TRANSCRIBE_PID"
 STATUS=$?
+
+if [[ -n "$PROGRESS_PID" ]] && kill -0 "$PROGRESS_PID" 2>/dev/null; then
+  kill "$PROGRESS_PID" 2>/dev/null || true
+  wait "$PROGRESS_PID" 2>/dev/null || true
+fi
 
 if [[ $STATUS -ne 0 ]]; then
   ERROR_TEXT="$(tail -n 20 "$LOG_FILE")"

@@ -7,7 +7,7 @@ Ubuntu 25 Wayland compatible system tray with AppIndicator3
 import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('AyatanaAppIndicator3', '0.1')
-from gi.repository import Gtk, GLib
+from gi.repository import Gtk, GLib, Gdk
 from gi.repository import AyatanaAppIndicator3 as AppIndicator3
 import json
 import os
@@ -18,6 +18,7 @@ class VoiceInputTray:
     def __init__(self):
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         self.config_path = os.path.join(self.script_dir, 'config.json')
+        self.log_path = os.path.join(self.script_dir, 'var', 'logs', 'voice-input.log')
         self.icon_path = os.path.join(self.script_dir, 'assets', 'icon.png')
 
         # Load configuration
@@ -143,6 +144,14 @@ class VoiceInputTray:
         # Separator
         menu.append(Gtk.SeparatorMenuItem())
 
+        # ===== Logs =====
+        self.show_logs_item = Gtk.MenuItem(label="Show Recent Logs")
+        self.show_logs_item.connect("activate", self.on_show_logs)
+        menu.append(self.show_logs_item)
+
+        # Separator
+        menu.append(Gtk.SeparatorMenuItem())
+
         # ===== Quit =====
         quit_item = Gtk.MenuItem(label="Quit")
         quit_item.connect("activate", self.quit)
@@ -206,6 +215,86 @@ class VoiceInputTray:
 
         except Exception as e:
             print(f"Error clearing buffer: {e}")
+
+    def read_recent_logs(self, max_lines=80):
+        """
+        Read the tail of the voice-input log for the tray popup.
+
+        The log can rotate and may not exist on a fresh install, so this method
+        treats missing files as an empty operational state rather than an error.
+        Returning both the display text and last non-empty line lets the dialog
+        support quick copy without changing the existing file logger.
+        """
+        try:
+            if not os.path.exists(self.log_path):
+                return "No log file found yet.", ""
+
+            with open(self.log_path, 'r', encoding='utf-8', errors='replace') as f:
+                lines = f.readlines()
+
+            recent_lines = lines[-max_lines:]
+            text = ''.join(recent_lines).rstrip()
+            last_line = ""
+
+            for line in reversed(recent_lines):
+                if line.strip():
+                    last_line = line.strip()
+                    break
+
+            return text or "Log file is empty.", last_line
+
+        except Exception as e:
+            return f"Error reading logs: {e}", ""
+
+    def copy_text_to_clipboard(self, text):
+        """
+        Copy text through GTK's clipboard so the tray does not need shell tools.
+
+        This keeps the popup independent from xclip/wl-copy availability and is
+        only used for small snippets such as the latest log line.
+        """
+        clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+        clipboard.set_text(text, -1)
+        clipboard.store()
+
+    def on_show_logs(self, widget):
+        """Show recent voice-input logs and offer one-click last-line copy."""
+        log_text, last_line = self.read_recent_logs()
+
+        dialog = Gtk.Dialog(title="Voice Input Logs")
+        dialog.set_modal(True)
+        dialog.set_default_size(900, 520)
+        dialog.add_button("Copy Last Line", 1)
+        dialog.add_button("Close", Gtk.ResponseType.CLOSE)
+
+        content = dialog.get_content_area()
+        content.set_border_width(10)
+
+        # A read-only monospace TextView keeps timestamps and JSON-ish log
+        # payloads aligned, which makes operational debugging easier from tray.
+        text_view = Gtk.TextView()
+        text_view.set_editable(False)
+        text_view.set_cursor_visible(False)
+        text_view.set_monospace(True)
+        text_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        text_view.get_buffer().set_text(log_text)
+
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        scroller.add(text_view)
+        content.pack_start(scroller, True, True, 0)
+
+        dialog.show_all()
+        response = dialog.run()
+
+        if response == 1:
+            if last_line:
+                self.copy_text_to_clipboard(last_line)
+                print("Copied latest log line to clipboard")
+            else:
+                print("No log line available to copy")
+
+        dialog.destroy()
 
     def quit(self, widget):
         """Quit the application"""
