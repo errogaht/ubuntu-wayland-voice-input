@@ -2,6 +2,7 @@ const SimpleAudioRecorder = require('./SimpleAudioRecorder');
 const ProviderFactory = require('./providers/ProviderFactory');
 const ClipboardManager = require('./ClipboardManager');
 const SimpleSoundNotifier = require('./SimpleSoundNotifier');
+const AudioFileProcessor = require('./AudioFileProcessor');
 const { createLogger } = require('./LogManager');
 const fs = require('fs');
 const path = require('path');
@@ -49,6 +50,10 @@ class VoiceInputApp {
     this.backupDir = path.join(__dirname, '../var/recordings');
     this.configFilePath = path.join(__dirname, '../config.json');
     this.vocabularyFilePath = path.join(__dirname, '../vocabulary.json');
+    this.audioFileProcessor = new AudioFileProcessor({
+      compressionFormat,
+      compressionBitrate
+    });
 
     // Load UI settings from config.json
     this.uiConfig = this.loadUIConfig();
@@ -66,22 +71,25 @@ class VoiceInputApp {
    * @returns {Object} UI configuration
    */
   loadUIConfig() {
+    const defaultUIConfig = {
+      mode: 'normal',
+      addPrefix: true,
+      addReviewerPrefix: false,
+      addSuffix: true,
+      notebookBuffer: []
+    };
+
     try {
       if (fs.existsSync(this.configFilePath)) {
         const configData = fs.readFileSync(this.configFilePath, 'utf8');
-        return JSON.parse(configData);
+        return { ...defaultUIConfig, ...JSON.parse(configData) };
       }
     } catch (error) {
       console.error('[VoiceInputApp] Failed to load UI config:', error.message);
     }
 
     // Return default config if file doesn't exist or is invalid
-    return {
-      mode: 'normal',
-      addPrefix: true,
-      addSuffix: true,
-      notebookBuffer: []
-    };
+    return defaultUIConfig;
   }
 
   /**
@@ -280,13 +288,13 @@ class VoiceInputApp {
       const startTime = Date.now();
       const audioBuffer = await this.startRecordingAndWaitForStop(stopCallback);
       const recordingDuration = Date.now() - startTime;
-      
+
       if (!audioBuffer) {
         console.log('⚠️ No audio recorded');
         this.logger.logSession(this.sessionId, 'RECORDING_EMPTY', { duration: recordingDuration });
         return;
       }
-      
+
       this.logger.logSession(this.sessionId, 'RECORDING_SUCCESS', {
         duration: recordingDuration,
         audioSize: audioBuffer.length
@@ -296,25 +304,7 @@ class VoiceInputApp {
       await this.saveRecordingBackup(audioBuffer);
 
       const transcription = await this.transcribeAudio(audioBuffer);
-
-      // Reload config to check current mode
-      this.uiConfig = this.loadUIConfig();
-
-      if (this.uiConfig.mode === 'notebook') {
-        // Notebook mode: accumulate transcriptions
-        console.log('📓 Notebook mode: adding to buffer');
-        this.uiConfig.notebookBuffer.push(transcription);
-        this.saveUIConfig();
-
-        // Copy accumulated buffer (join with newline)
-        const accumulatedText = this.uiConfig.notebookBuffer.join('\n');
-        await this.copyText(accumulatedText);
-
-        console.log(`📓 Buffer size: ${this.uiConfig.notebookBuffer.length} recordings`);
-      } else {
-        // Normal mode: copy single transcription
-        await this.copyText(transcription);
-      }
+      await this.copyTranscriptionToClipboard(transcription);
 
       // Delete backup after successful transcription (if enabled)
       if (this.config.deleteBackupAfterSuccess) {
@@ -325,23 +315,142 @@ class VoiceInputApp {
 
       console.log('✅ Completed');
       this.logger.logSession(this.sessionId, 'SESSION_COMPLETE');
-      
+
     } catch (error) {
       console.error('[VoiceInputApp] Voice input session failed:', error.message);
       this.logger.logError(this.sessionId, error, 'session');
-      
+
       // Play error sound
       try {
         await this.soundNotifier.playError();
       } catch (soundError) {
         console.error('[VoiceInputApp] Error playing error sound:', soundError.message);
       }
-      
+
       throw error;
-      
+
     } finally {
       this.isRunning = false;
       this.cleanup();
+    }
+  }
+
+  /**
+   * Transcribe one or more existing audio files without touching microphone
+   * recording state. This is the Nautilus/right-click entrypoint, so it keeps
+   * the same transcription, vocabulary, notebook, clipboard, and sound behavior
+   * as the hotkey flow while intentionally skipping backup creation.
+   *
+   * @param {string[]} filePaths - User-selected audio files.
+   * @returns {Promise<string>} Raw transcription text before clipboard prefixes.
+   */
+  async runFromAudioFiles(filePaths) {
+    if (this.isRunning) {
+      console.log('⚠️ Already running');
+      return '';
+    }
+
+    this.isRunning = true;
+    let temporaryMergedPath = null;
+
+    try {
+      await this.soundNotifier.initialize();
+
+      const sortedFiles = AudioFileProcessor.validateAndSortFiles(filePaths);
+      console.log(`📁 Transcribing ${sortedFiles.length} selected audio file(s)`);
+      sortedFiles.forEach((filePath, index) => {
+        console.log(`  ${index + 1}. ${filePath}`);
+      });
+
+      this.logger.logSession(this.sessionId, 'FILE_TRANSCRIPTION_START', {
+        fileCount: sortedFiles.length,
+        files: sortedFiles
+      });
+
+      let audioBuffer;
+
+      if (sortedFiles.length === 1) {
+        audioBuffer = this.audioFileProcessor.readAudioBuffer(sortedFiles[0]);
+        this.logger.logSession(this.sessionId, 'FILE_TRANSCRIPTION_INPUT', {
+          path: sortedFiles[0],
+          size: audioBuffer.length,
+          format: audioBuffer._audioFormat
+        });
+      } else {
+        const merged = await this.audioFileProcessor.mergeAudioFiles(sortedFiles);
+        temporaryMergedPath = merged.path;
+        audioBuffer = fs.readFileSync(merged.path);
+        audioBuffer._audioFormat = merged.format;
+        audioBuffer._audioExtension = merged.extension;
+
+        this.logger.logSession(this.sessionId, 'FILE_TRANSCRIPTION_MERGED', {
+          path: merged.path,
+          size: audioBuffer.length,
+          format: merged.format,
+          sourceCount: sortedFiles.length
+        });
+      }
+
+      const transcription = await this.transcribeAudio(audioBuffer);
+      await this.copyTranscriptionToClipboard(transcription);
+
+      console.log('✅ File transcription completed');
+      this.logger.logSession(this.sessionId, 'FILE_TRANSCRIPTION_COMPLETE', {
+        fileCount: sortedFiles.length
+      });
+
+      return transcription;
+
+    } catch (error) {
+      console.error('[VoiceInputApp] File transcription failed:', error.message);
+      this.logger.logError(this.sessionId, error, 'file-transcription');
+
+      try {
+        await this.soundNotifier.playError();
+      } catch (soundError) {
+        console.error('[VoiceInputApp] Error playing error sound:', soundError.message);
+      }
+
+      throw error;
+
+    } finally {
+      if (temporaryMergedPath && fs.existsSync(temporaryMergedPath)) {
+        try {
+          fs.unlinkSync(temporaryMergedPath);
+        } catch (error) {
+          console.error('[VoiceInputApp] Failed to cleanup merged temp file:', error.message);
+        }
+      }
+
+      this.isRunning = false;
+      this.cleanup();
+    }
+  }
+
+  /**
+   * Keep all clipboard-facing post-processing in one place so microphone and
+   * file transcription modes cannot drift in notebook/prefix/suffix behavior.
+   *
+   * @param {string} transcription - Raw provider output after vocabulary fixes.
+   */
+  async copyTranscriptionToClipboard(transcription) {
+    // Reload config to check current mode
+    this.uiConfig = this.loadUIConfig();
+
+    if (this.uiConfig.mode === 'notebook') {
+      // Notebook mode: accumulate transcriptions
+      console.log('📓 Notebook mode: adding to buffer');
+      this.uiConfig.notebookBuffer.push(transcription);
+      this.saveUIConfig();
+
+      // Copy accumulated buffer (join with newline)
+      const accumulatedText = this.uiConfig.notebookBuffer.join('\n');
+      await this.copyText(accumulatedText);
+
+      console.log(`📓 Buffer size: ${this.uiConfig.notebookBuffer.length} recordings`);
+    } else {
+      // Normal mode: copy single transcription
+      await this.copyText(transcription);
     }
   }
 
@@ -432,7 +541,7 @@ class VoiceInputApp {
     this._ensureTranscriberLoaded();
 
     console.log('🔄 Transcribing...');
-    
+
     try {
       let transcription = await this.transcriber.transcribe(audioBuffer);
 
@@ -442,18 +551,18 @@ class VoiceInputApp {
       console.log(`✅ "${transcription}"`);
       this.logger.logTranscription(this.sessionId, transcription);
       return transcription;
-      
+
     } catch (error) {
       console.error('[VoiceInputApp] ❌ Transcription failed:', error.message);
       this.logger.logError(this.sessionId, error, 'transcription');
-      
+
       // Play error sound for transcription failures
       try {
         await this.soundNotifier.playError();
       } catch (soundError) {
         console.error('[VoiceInputApp] Error playing error sound:', soundError.message);
       }
-      
+
       throw error;
     }
   }
@@ -531,7 +640,9 @@ class VoiceInputApp {
     // Apply prefix/suffix based on config
     let finalText = formattedText;
 
-    if (this.uiConfig.addPrefix) {
+    if (this.uiConfig.addReviewerPrefix) {
+      finalText = '[Reviewer comment]: ' + finalText;
+    } else if (this.uiConfig.addPrefix) {
       finalText = '[Voice - verify]: ' + finalText;
     }
 
@@ -569,13 +680,13 @@ class VoiceInputApp {
 
   cleanup() {
     // Cleanup
-    
+
     try {
       this.audioRecorder.cleanup();
     } catch (error) {
       console.error('[VoiceInputApp] Error during cleanup:', error.message);
     }
-    
+
     try {
       this.soundNotifier.cleanup();
     } catch (error) {

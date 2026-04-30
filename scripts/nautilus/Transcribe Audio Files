@@ -1,0 +1,70 @@
+#!/bin/bash
+
+PROJECT_DIR="/home/errogaht/aiprojects/voice-input"
+LAUNCHER="$PROJECT_DIR/run-transcribe-files.sh"
+LOG_FILE="$(mktemp /tmp/voice-input-nautilus.XXXXXX.log)"
+
+cleanup() {
+  rm -f "$LOG_FILE"
+}
+trap cleanup EXIT
+
+# Nautilus provides selected paths as newline-delimited text. Keeping this
+# parser local to the script preserves spaces and shell metacharacters in names.
+if [[ -n "${NAUTILUS_SCRIPT_SELECTED_FILE_PATHS:-}" ]]; then
+  mapfile -t SELECTED_FILES <<< "$NAUTILUS_SCRIPT_SELECTED_FILE_PATHS"
+else
+  SELECTED_FILES=("$@")
+fi
+
+# Nautilus can invoke scripts with current-folder/directory arguments depending
+# on how the script is launched. Filter here so the strict Node CLI only sees
+# real audio files and can keep reporting bad direct CLI selections clearly.
+AUDIO_FILES=()
+for file_path in "${SELECTED_FILES[@]}"; do
+  [[ -f "$file_path" ]] || continue
+
+  case "${file_path,,}" in
+    *.wav|*.ogg|*.opus|*.mp3|*.m4a|*.flac|*.webm|*.aac)
+      AUDIO_FILES+=("$file_path")
+      ;;
+  esac
+done
+
+if [[ ${#AUDIO_FILES[@]} -eq 0 ]]; then
+  zenity --error --title="Voice Input" --text="No audio files selected." 2>/dev/null || true
+  exit 1
+fi
+
+"$LAUNCHER" "${AUDIO_FILES[@]}" >"$LOG_FILE" 2>&1 &
+TRANSCRIBE_PID=$!
+
+if command -v zenity >/dev/null 2>&1; then
+  (
+    while kill -0 "$TRANSCRIBE_PID" 2>/dev/null; do
+      echo "# Transcribing selected audio files..."
+      sleep 1
+    done
+  ) | zenity --progress \
+      --title="Voice Input" \
+      --text="Transcribing selected audio files..." \
+      --pulsate \
+      --auto-close \
+      --no-cancel \
+      --width=360 \
+      2>/dev/null || true
+fi
+
+wait "$TRANSCRIBE_PID"
+STATUS=$?
+
+if [[ $STATUS -ne 0 ]]; then
+  ERROR_TEXT="$(tail -n 20 "$LOG_FILE")"
+  if command -v zenity >/dev/null 2>&1; then
+    zenity --error --title="Voice Input" --text="$ERROR_TEXT" --width=520 --no-wrap 2>/dev/null || true
+  else
+    printf '%s\n' "$ERROR_TEXT" >&2
+  fi
+fi
+
+exit "$STATUS"

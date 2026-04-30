@@ -139,7 +139,8 @@ class NexaraProvider extends TranscriptionProvider {
       'wav': 'audio/wav',
       'webm': 'audio/webm',
       'm4a': 'audio/m4a',
-      'flac': 'audio/flac'
+      'flac': 'audio/flac',
+      'aac': 'audio/aac'
     };
     return mimeTypes[format.toLowerCase()] || 'audio/wav';
   }
